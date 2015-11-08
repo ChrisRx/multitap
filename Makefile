@@ -1,21 +1,17 @@
-# the compiler: gcc for C program, define as g++ for C++
 CC = gcc
 INSTALL = install
 DESTDIR = /usr/local/bin
 
-# compiler flags:
-#  -g    adds debugging information to the executable file
-#  -Wall turns on most, but not all, compiler warnings
-CFLAGS  = -pthread -g -O0 -Wall
-LIBS = -lyaml -lpcap -ldnet -ldumbnet
+CFLAGS  = -pthread -pie -fPIE -ftrapv -O2 -Wall -Wconversion -Wformat-security -Wsign-conversion -Werror -fstack-protector-all -Wstack-protector --param ssp-buffer-size=4 -D_FORTIFY_SOURCE=2
+LIBS = -lyaml -lpcap -ldumbnet
+LDFLAGS="-Wl,-z,relro,-z,now"
 
-# the build target executable:
 TARGET = multitap
 
 all: $(TARGET)
 
 $(TARGET): $(TARGET).c
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c $(LIBS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $(TARGET) $(TARGET).c $(LIBS)
 
 clean:
 	$(RM) $(TARGET)

@@ -24,7 +24,13 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <pcap.h>
+
+#ifdef UBUNTU
+#include <dumbnet.h>
+#else
 #include <dnet.h>
+#endif
+
 #include <yaml.h>
 #include <pthread.h>
 
@@ -38,58 +44,63 @@ struct network_tap {
     char *filter;
     pcap_t *pd;
     eth_t *eth_retrans;
+    int ready;
 };
 
 typedef struct {
-  size_t size;
-  size_t capacity;
-  struct network_tap *data;
+    size_t size;
+    size_t capacity;
+    struct network_tap *data;
 } NetworkTaps;
 
 static NetworkTaps *taps;
 
 void ntaps_init(NetworkTaps *t, size_t s) {
-  t->data = (struct network_tap *)malloc(s * sizeof(struct network_tap));
-  t->size = 0;
-  t->capacity = s;
+    t->data = (struct network_tap *)malloc(s * sizeof(struct network_tap));
+    t->size = 0;
+    t->capacity = s;
 }
 
 void ntaps_append(NetworkTaps *t, struct network_tap tap) {
-  if (t->size == t->capacity) {
-    t->capacity *= 2;
-    t->data = (struct network_tap *)realloc(t->data, t->capacity
-        * sizeof(struct network_tap));
-  }
-  t->data[t->size++] = tap;
+    if (t->size == t->capacity) {
+        t->capacity *= 2;
+        t->data = (struct network_tap *)realloc(t->data, t->capacity
+            * sizeof(struct network_tap));
+    }
+    t->data[t->size++] = tap;
 }
 
 void ntaps_free(NetworkTaps *t) {
-  free(t->data);
-  t->data = NULL;
-  t->size = t->capacity = 0;
+    free(t->data);
+    t->data = NULL;
+    t->size = t->capacity = 0;
 }
 
 void signal_handler(int sign)
 {
-    pthread_mutex_lock (&mutex);
-    int i;
+    pthread_mutex_lock(&mutex);
     if (sign != 0)
         signal(sign, &signal_handler);
 
     // Loop through taps and close gracefully
     if (taps != NULL) {
-      for (i=0; i < taps->size; i++) {
-        if (taps->data[i].eth_retrans != NULL)
-          eth_close(taps->data[i].eth_retrans);
-
-        if (taps->data[i].pd != NULL)
-          pcap_close(taps->data[i].pd);
-      }
-      ntaps_free(taps);
+        int i;
+        for (i=0; i < taps->size; i++) {
+            if (taps->data[i].ready == -1) {
+                continue;
+            }
+            if (taps->data[i].eth_retrans == 0) {
+                eth_close(taps->data[i].eth_retrans);
+            }
+            if (taps->data[i].pd != NULL) {
+                pcap_close(taps->data[i].pd);
+            }
+        }
+        ntaps_free(taps);
     }
     fprintf(stderr, "\n");
     exit(sign);
-    pthread_mutex_unlock (&mutex);
+    pthread_mutex_unlock(&mutex);
 }
 
 static void fatal(const char *format, ...)
@@ -123,14 +134,16 @@ static void msg(const char *format, ...)
 
 static int drop_privileges(void)
 {
-    unsigned long groupid = 0;
-    unsigned long userid = 0;
+    gid_t groupid = 0;
+    uid_t userid = 0;
     if (getuid() == 0) {
       /* process is running as root, drop privileges */
-      if (setgid(groupid) != 0)
-          fatal("setgid: Unable to drop group privileges: %s", strerror(errno));
-      if (setuid(userid) != 0)
-          fatal("setuid: Unable to drop user privileges: %S", strerror(errno));
+        if (setgid(groupid) != 0) {
+            fatal("setgid: Unable to drop group privileges: %s", strerror(errno));
+        }
+        if (setuid(userid) != 0) {
+            fatal("setuid: Unable to drop user privileges: %S", strerror(errno));
+        }
     }
     return 0;
 }
@@ -152,6 +165,7 @@ void *tap_create(void *targs)
     struct network_tap *tap = targs;
 
     tap->pd = pcap_open_live(tap->in_device, 65535, 1, 500, errorbuf);
+    tap->ready = 1;
 
     if(tap->pd == NULL)
     {
@@ -276,6 +290,9 @@ int multitap_init(NetworkTaps *taps)
 {
   int i;
   pthread_t threads[taps->size];
+  for (i=0; i < taps->size; i++) {
+      taps->data[i].ready = -1;
+  }
   for (i=0; i < taps->size; i++) {
       if (pthread_create(&threads[i], NULL, tap_create,
           (void *) &taps->data[i])) {
