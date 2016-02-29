@@ -1,6 +1,6 @@
 /**
  * multitap, a multithreaded network tap
- * Copyright (C) 2014 Chris Marshall
+ * Copyright (C) 2016 Chris Marshall
  *
  * This file is part of multitap.
  *
@@ -34,46 +34,33 @@
 #include <yaml.h>
 #include <pthread.h>
 
+#include "multitap.h"
+
 #define STDBUF 1024
 
 pthread_mutex_t mutex;
 
-struct network_tap {
-    char *in_device;
-    char *out_device;
-    char *filter;
-    pcap_t *pd;
-    eth_t *eth_retrans;
-    int ready;
-};
-
-typedef struct {
-    size_t size;
-    size_t capacity;
-    struct network_tap *data;
-} NetworkTaps;
-
 static NetworkTaps *taps;
 
-void ntaps_init(NetworkTaps *t, size_t s) {
-    t->data = (struct network_tap *)malloc(s * sizeof(struct network_tap));
-    t->size = 0;
-    t->capacity = s;
+void taps_init(NetworkTaps *t, size_t initial_size) {
+    t->array = (NetworkTap*)malloc(initial_size * sizeof(NetworkTap));
+    t->length = 0;
+    t->size = initial_size;
 }
 
-void ntaps_append(NetworkTaps *t, struct network_tap tap) {
-    if (t->size == t->capacity) {
-        t->capacity *= 2;
-        t->data = (struct network_tap *)realloc(t->data, t->capacity
-            * sizeof(struct network_tap));
+void taps_append(NetworkTaps *t, NetworkTap element) {
+    if (t->length == t->size) {
+        t->size *= 2;
+        t->array = (NetworkTap*)realloc(t->array, t->size
+            * sizeof(NetworkTap));
     }
-    t->data[t->size++] = tap;
+    t->array[t->length++] = element;
 }
 
-void ntaps_free(NetworkTaps *t) {
-    free(t->data);
-    t->data = NULL;
-    t->size = t->capacity = 0;
+void taps_free(NetworkTaps *t) {
+    free(t->array);
+    t->array = NULL;
+    t->length = t->size = 0;
 }
 
 void signal_handler(int sign)
@@ -85,18 +72,18 @@ void signal_handler(int sign)
     // Loop through taps and close gracefully
     if (taps != NULL) {
         int i;
-        for (i=0; i < taps->size; i++) {
-            if (taps->data[i].ready == -1) {
+        for (i=0; i < taps->length; i++) {
+            if (taps->array[i].ready == -1) {
                 continue;
             }
-            if (taps->data[i].eth_retrans == 0) {
-                eth_close(taps->data[i].eth_retrans);
+            if (taps->array[i].eth_retrans == 0) {
+                eth_close(taps->array[i].eth_retrans);
             }
-            if (taps->data[i].pd != NULL) {
-                pcap_close(taps->data[i].pd);
+            if (taps->array[i].pd != NULL) {
+                pcap_close(taps->array[i].pd);
             }
         }
-        ntaps_free(taps);
+        taps_free(taps);
     }
     fprintf(stderr, "\n");
     exit(sign);
@@ -162,7 +149,7 @@ void *tap_create(void *targs)
     struct bpf_program fp;
     bpf_u_int32 netmask = 0xFFFFFF00;
     char errorbuf[PCAP_ERRBUF_SIZE];
-    struct network_tap *tap = targs;
+    NetworkTap* tap = targs;
 
     tap->pd = pcap_open_live(tap->in_device, 65535, 1, 500, errorbuf);
     tap->ready = 1;
@@ -211,7 +198,7 @@ static void dump_mapping(yaml_parser_t *parser, NetworkTaps *taps) {
 
     char *key = NULL, *value = NULL, **type_ptr;
     char *filter = "";
-    struct network_tap tconfig;
+    NetworkTap tconfig;
 
     while (event.type != YAML_MAPPING_END_EVENT) {
         if (!yaml_parser_parse(parser, &event)) {
@@ -247,7 +234,7 @@ static void dump_mapping(yaml_parser_t *parser, NetworkTaps *taps) {
     }
     tconfig.filter = filter;
 
-    ntaps_append(taps, tconfig);
+    taps_append(taps, tconfig);
 }
 
 int read_config(char *filename, NetworkTaps *taps) {
@@ -286,16 +273,15 @@ int read_config(char *filename, NetworkTaps *taps) {
     return 0;
 }
 
-int multitap_init(NetworkTaps *taps)
-{
+int multitap_init(NetworkTaps *taps) {
   int i;
-  pthread_t threads[taps->size];
-  for (i=0; i < taps->size; i++) {
-      taps->data[i].ready = -1;
+  pthread_t threads[taps->length];
+  for (i=0; i < taps->length; i++) {
+      taps->array[i].ready = -1;
   }
-  for (i=0; i < taps->size; i++) {
+  for (i=0; i < taps->length; i++) {
       if (pthread_create(&threads[i], NULL, tap_create,
-          (void *) &taps->data[i])) {
+          (void *) &taps->array[i])) {
           fprintf(stderr, "ERROR; pthread_create() failed\n");
           exit(1);
       }
@@ -306,7 +292,7 @@ int multitap_init(NetworkTaps *taps)
   sleep(2);
   drop_privileges();
 
-  for (i=0; i < taps->size; i++) {
+  for (i=0; i < taps->length; i++) {
       if (pthread_join(threads[i], NULL)) {
           fprintf(stderr, "ERROR; pthread_join() failed\n");
           exit(1);
@@ -324,11 +310,13 @@ int main(int argc, char *argv[])
         fprintf( stderr, "Not enough args\n" );
         exit(1);
     }
-    NetworkTaps t;
-    taps = &t;
+
+    if (taps == NULL) {
+        taps = (NetworkTaps*)malloc(sizeof(NetworkTaps));
+    }
 
     /* Initialize dynamic array */
-    ntaps_init(taps, 1);
+    taps_init(taps, 1);
 
     /* Read in tap configuration from yaml */
     read_config(argv[1], taps);
