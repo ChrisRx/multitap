@@ -6,12 +6,15 @@ CFLAGS  = -pthread -pie -fPIE -ftrapv -O2 -Wall -Wconversion -Wformat-security -
 LIBS = -lyaml -lpcap -ldumbnet
 LDFLAGS="-Wl,-z,relro,-z,now"
 
-TARGET = multitap
+BUILD_DIR = bin
+SOURCE_DIR = src
+TARGET = $(BUILD_DIR)/multitap
+SOURCE_FILES = $(SOURCE_DIR)/multitap.c
 
 all: $(TARGET)
 
-$(TARGET): $(TARGET).c
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $(TARGET) $(TARGET).c $(LIBS)
+$(TARGET): $(SOURCE_FILES)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $(TARGET) $< $(LIBS)
 
 clean:
 	$(RM) $(TARGET)

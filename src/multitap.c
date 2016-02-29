@@ -63,8 +63,7 @@ void taps_free(NetworkTaps *t) {
     t->length = t->size = 0;
 }
 
-void signal_handler(int sign)
-{
+void signal_handler(int sign) {
     pthread_mutex_lock(&mutex);
     if (sign != 0)
         signal(sign, &signal_handler);
@@ -90,9 +89,7 @@ void signal_handler(int sign)
     pthread_mutex_unlock(&mutex);
 }
 
-static void fatal(const char *format, ...)
-{
-
+static void fatal(const char *format, ...) {
     pthread_mutex_lock (&mutex);
 
     char buf[STDBUF+1];
@@ -108,8 +105,7 @@ static void fatal(const char *format, ...)
     signal_handler(1);
 }
 
-static void msg(const char *format, ...)
-{
+static void msg(const char *format, ...) {
     char buf[STDBUF+1];
     va_list ap;
 
@@ -119,12 +115,11 @@ static void msg(const char *format, ...)
     va_end(ap);
 }
 
-static int drop_privileges(void)
-{
+static int drop_privileges(void) {
     gid_t groupid = 0;
     uid_t userid = 0;
+    // if process is running as root, drop privileges
     if (getuid() == 0) {
-      /* process is running as root, drop privileges */
         if (setgid(groupid) != 0) {
             fatal("setgid: Unable to drop group privileges: %s", strerror(errno));
         }
@@ -135,15 +130,13 @@ static int drop_privileges(void)
     return 0;
 }
 
-void packet_retrans(u_char *args, struct pcap_pkthdr *pkthdr, u_char *pkt)
-{
-    eth_t *eth_retrans = (eth_t *) args;
+void packet_retrans(u_char* args, struct pcap_pkthdr* pkthdr, u_char* pkt) {
+    eth_t* eth_retrans = (eth_t*) args;
     eth_send(eth_retrans, pkt, pkthdr->caplen);
     return;
 }
 
-void *tap_create(void *targs)
-{
+void* tap_create(void* targs) {
     static int count;
     static int datalink;
     struct bpf_program fp;
@@ -193,11 +186,11 @@ void *tap_create(void *targs)
     pthread_exit(NULL);
 }
 
-static void dump_mapping(yaml_parser_t *parser, NetworkTaps *taps) {
+static void dump_mapping(yaml_parser_t* parser, NetworkTaps* taps) {
     yaml_event_t event;
 
-    char *key = NULL, *value = NULL, **type_ptr;
-    char *filter = "";
+    char* key = NULL, *value = NULL, **type_ptr;
+    char* filter = "";
     NetworkTap tconfig;
 
     while (event.type != YAML_MAPPING_END_EVENT) {
@@ -208,9 +201,9 @@ static void dump_mapping(yaml_parser_t *parser, NetworkTaps *taps) {
         if (event.type == YAML_SCALAR_EVENT) {
             type_ptr = key == NULL ? &key : &value;
 
-            *type_ptr = (char *) malloc(strlen((const char *)
+            *type_ptr = (char*) malloc(strlen((const char*)
                 event.data.scalar.value) + 1);
-            strcpy(*type_ptr, (const char *) event.data.scalar.value);
+            strcpy(*type_ptr, (const char*) event.data.scalar.value);
 
             if (value != NULL) {
                 if (strcmp(key, "in") == 0) {
@@ -237,8 +230,8 @@ static void dump_mapping(yaml_parser_t *parser, NetworkTaps *taps) {
     taps_append(taps, tconfig);
 }
 
-int read_config(char *filename, NetworkTaps *taps) {
-    FILE *fh = fopen(filename, "r");
+int read_config(char* filename, NetworkTaps* taps) {
+    FILE* fh = fopen(filename, "r");
     yaml_parser_t parser;
     yaml_event_t  event;
 
@@ -273,7 +266,7 @@ int read_config(char *filename, NetworkTaps *taps) {
     return 0;
 }
 
-int multitap_init(NetworkTaps *taps) {
+int multitap_init(NetworkTaps* taps) {
   int i;
   pthread_t threads[taps->length];
   for (i=0; i < taps->length; i++) {
@@ -281,7 +274,7 @@ int multitap_init(NetworkTaps *taps) {
   }
   for (i=0; i < taps->length; i++) {
       if (pthread_create(&threads[i], NULL, tap_create,
-          (void *) &taps->array[i])) {
+          (void*) &taps->array[i])) {
           fprintf(stderr, "ERROR; pthread_create() failed\n");
           exit(1);
       }
@@ -301,8 +294,7 @@ int multitap_init(NetworkTaps *taps) {
   return 0;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
     signal(SIGINT, &signal_handler);
     signal(SIGTERM, &signal_handler);
 
