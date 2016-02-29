@@ -14,6 +14,7 @@ SOURCE_FILES = $(SOURCE_DIR)/multitap.c
 all: $(TARGET)
 
 $(TARGET): $(SOURCE_FILES)
+	@mkdir -p bin
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $(TARGET) $< $(LIBS)
 
 clean:
